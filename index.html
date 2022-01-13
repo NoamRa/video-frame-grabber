@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Video frame grabber</title>
+    <meta http-equiv="content-security-policy" content="" />
+  </head>
+  <body>
+    <div
+      style="
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      "
+    >
+      <input
+        id="my-input"
+        type="file"
+        accept="video/*"
+        title="choose video file"
+      />
+      <span>
+        <button id="get-frame">grab frame</button>
+        <button id="clear-frames">clear frames</button>
+      </span>
+      <video
+        id="my-video"
+        controls
+        autoplay
+        muted
+        src="./assets/big_buck_bunny_720p_surround.mp4"
+      ></video>
+
+      <div id="my-frames"></div>
+      <div>
+        Made by <a href="https://noamr.link" target="_blank">Noam Raby</a>
+        <br />
+        <a href="https://github.com/NoamRa/video-frame-grabber" target="_blank">
+          GitHub Repo
+        </a>
+      </div>
+    </div>
+  </body>
+  <script type="text/javascript">
+    const store = (() => {
+      let state = {
+        factor: (dimension) => dimension * 0.5, // change if you need something else
+      };
+      return {
+        getState: () => state,
+        updateState: (updatedState) => {
+          state = { ...state, ...updatedState };
+        },
+      };
+    })();
+    const inputEl = document.getElementById("my-input");
+    const videoEl = document.getElementById("my-video");
+    const getFrameButton = document.getElementById("get-frame");
+    const clearFramesButton = document.getElementById("clear-frames");
+    const frames = document.getElementById("my-frames");
+
+    inputEl.addEventListener("change", (event) => {
+      if (event.target?.files?.length > 0) {
+        videoEl.src = URL.createObjectURL(event.target.files[0]);
+        store.updateState(event.target.files[0].name);
+      }
+    });
+
+    videoEl.addEventListener("loadedmetadata", (event) => {
+      const { videoHeight, videoWidth, duration, src } = event.target;
+      store.updateState({ videoHeight, videoWidth, duration });
+      if (!src.includes("blob")) {
+        store.updateState(src.split("/").pop()); // 😿 poor man's path.basename()
+      }
+    });
+
+    videoEl.addEventListener("timeupdate", (event) => {
+      store.updateState({ currentTime: event.target.currentTime });
+    });
+
+    // grab frame
+    function createFrame() {
+      // create canvas from current video frame
+      const { videoWidth, videoHeight, factor, currentTime } = store.getState();
+      const width = factor(videoWidth);
+      const height = factor(videoHeight);
+
+      const canvasEl = document.createElement("canvas");
+      canvasEl.id = `frame-${currentTime}`;
+      canvasEl._currentTime = currentTime;
+      canvasEl.width = width;
+      canvasEl.height = height;
+      canvasEl.getContext("2d").drawImage(videoEl, 0, 0, width, height);
+      return canvasEl;
+    }
+
+    function makeFrameDonloadable(frame) {
+      frame.style.cursor = "pointer";
+      frame.addEventListener("click", () => {
+        const { src } = store.getState();
+        try {
+          // May fail when canvas source is cross origin.
+          // See https://developer.mozilla.org/en-US/docs/Web/HTML/CORS_enabled_image#security_and_tainted_canvases
+          const imageData = frame.toDataURL();
+          const tmpLink = document.createElement("a");
+          tmpLink.download = `frame ${store.getState().src} @${
+            frame._currentTime
+          }.png`;
+          tmpLink.href = imageData;
+
+          document.body.appendChild(tmpLink);
+          tmpLink.click();
+          document.body.removeChild(tmpLink);
+        } catch (err) {
+          if (err.message.includes("Failed to execute 'toDataURL'")) {
+            alert(
+              "Sorry, can't download a frame from cross origin 😿.\n" +
+                "Try to choose a local file and download frames from it.",
+            );
+          }
+          console.error(err);
+        }
+      });
+    }
+
+    getFrameButton.addEventListener("click", function grabFrame() {
+      const frame = createFrame();
+      makeFrameDonloadable(frame);
+      frames.appendChild(frame);
+      console.log(`${frame.id} added to page, click to download`);
+    });
+
+    clearFramesButton.addEventListener("click", function clearFrames() {
+      frames.innerHTML = "";
+    });
+  </script>
+</html>
